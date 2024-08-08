@@ -1,0 +1,4 @@
+{
+    "llama_model_path": "/home/fuyingjie/ssd2-fuyingjie/models--meta-llama--Llama-2-7b-chat-hf/snapshots/f5db02db724555f92da89c216ac04704f23d4590",
+    "openai_api_key_path": "api.key"
+}

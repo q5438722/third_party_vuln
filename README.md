@@ -23,3 +23,9 @@ Currently we have crafted two datasets
 - [Thunderbird](dataset/thunderbird_featured.csv)
 - [Firefox](dataset/firefox_featured.csv)
 - [KDE](dataset/KDE_featured.csv)
+
+## RAG
+
+`rag.py` has implemented two functionalities:
+- initialize() to create embedding in qdrant database using LLAMA or OPENAI (defined at `embedding.py')
+- query() to find the most similar comments as the given one from the qdrant database 
