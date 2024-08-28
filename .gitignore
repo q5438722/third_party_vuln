@@ -1,2 +1,5 @@
 */.ipynb_checkpoints/
 output/*
+data/*
+dataset/*
+logs/*

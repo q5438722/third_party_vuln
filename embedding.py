@@ -1,7 +1,10 @@
 from abc import ABC, abstractmethod
 import os
+import json
 import torch
 import openai
+import pandas as pd
+from tqdm import tqdm
 from transformers import AutoModel, AutoTokenizer
 from utils import load_config
 torch.cuda.empty_cache()
@@ -22,22 +25,29 @@ class LLAMA(Embedding):
         # self.device='cpu'
         self.model = AutoModel.from_pretrained(self.config['llama_model_path'])
 
-    def get_embeddings(self, texts):
-        inputs = self.tokenizer(texts, return_tensors="pt", max_length=2048, padding='max_length',
-                                add_special_tokens=True, truncation=True)
+    def get_embeddings(self, texts, step=8):
+        length = len(texts)
+        embedding_list = []
 
-        # Move tensors to the same device as model
-        inputs = {name: tensor.to(self.device) for name, tensor in inputs.items()}
+        for st in tqdm(range(0, length, step)):
+            end = min(st + step, length)
+            inputs = self.tokenizer(texts[st:end], return_tensors="pt", max_length=2048, padding='max_length',
+                                    add_special_tokens=True, truncation=True)
 
-        self.model.to(self.device)
-        # Perform inference and extract embeddings
-        with torch.no_grad():  # Disable gradient computation for inference
-            outputs = self.model(**inputs)
-            embeddings = outputs.last_hidden_state[:, -1, :].detach()
+            # Move tensors to the same device as model
+            inputs = {name: tensor.to(self.device) for name, tensor in inputs.items()}
 
-        # Move embeddings back to CPU for further processing if needed
-        return embeddings.cpu().numpy()
+            self.model.to(self.device)
+            # Perform inference and extract embeddings
+            with torch.no_grad():  # Disable gradient computation for inference
+                outputs = self.model(**inputs)
+                embeddings = outputs.last_hidden_state[:, -1, :].detach()
 
+            # Move embeddings back to CPU for further processing if needed
+            batch_embedding = embeddings.cpu()
+            embedding_list.append(batch_embedding)
+        total_embedding = torch.cat(embedding_list, dim=0)
+        return total_embedding.numpy()
 
 
 class OPENAI(Embedding):
@@ -73,12 +83,21 @@ if __name__ == "__main__":
 
     text = "Example text for generating embeddings."
 
-    # LLAMA Embedding
+    # data_sets = ['dataset/thunderbird_featured.csv', 'dataset/KDE_featured.csv', 'dataset/firefox_featured.csv']
+    data_sets = ['dataset/KDE_featured.csv', 'dataset/firefox_featured.csv']
+        # LLAMA Embedding
     llama_embedder = LLAMA(config)
-    llama_embedding = llama_embedder.get_embedding(text)
+
+    for data_path in data_sets:
+        df = pd.read_csv(data_path)
+        df.comment =  df.comment.apply(lambda x: str(x))
+        llama_embedding = llama_embedder.get_embeddings(df.comment.to_list())
+        with open(f'{data_path}_embedding.json', 'w') as f:
+            json.dump(llama_embedding.tolist(), f)
+
     print("LLAMA Embedding:", llama_embedding)
 
     # OPENAI Embedding
-    openai_embedder = OPENAI(config)
-    openai_embedding = openai_embedder.get_embedding(text)
-    print("OpenAI Embedding:", openai_embedding)
+    # openai_embedder = OPENAI(config)
+    # openai_embedding = openai_embedder.get_embedding(text)
+    # print("OpenAI Embedding:", openai_embedding)

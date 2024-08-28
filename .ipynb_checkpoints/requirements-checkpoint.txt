@@ -1,0 +1,5 @@
+openai==0.27.2
+pandas==2.2.2
+qdrant-client==1.4.0
+transformers==4.44.0
+
