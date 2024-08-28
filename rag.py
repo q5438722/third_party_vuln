@@ -8,17 +8,18 @@ from utils import load_config
 import numpy as np
 class RAG:
 
-    def __init__(self,embedding_model='LLAMA',embedding_size=4096,qdrant_path='data/qdrant_db', embeddings_dir='data/embeddings',batch_size=16):
+    def __init__(self,mode='query',embedding_model='LLAMA',embedding_size=4096,qdrant_path='data/qdrant_db', embeddings_dir='data/embeddings',batch_size=16):
         self.embeddings_dir = embeddings_dir
         self.qdrant_path = qdrant_path
         self.collection_name = 'comment_embeddings'
         self.embeddings_size=embedding_size
         self.batch_size=batch_size
         config = load_config()
-        if embedding_model=='LLAMA':
-            self.embedding_model=LLAMA(config)
-        elif embedding_model=='OPENAI':
-            self.embedding_model=OPENAI(config)
+        if mode=='train':
+            if embedding_model=='LLAMA':
+                self.embedding_model=LLAMA(config)
+            elif embedding_model=='OPENAI':
+                self.embedding_model=OPENAI(config)
 
         self.client = qdrant_client.QdrantClient(path=self.qdrant_path)
 
@@ -83,10 +84,13 @@ class RAG:
         dataset_name=csv_file.split('.')[0]
 
         comments = dataset['comment'].tolist()
+        labels=dataset['label'].to_list()
         payloads = [{"bug_id": f"{dataset_name}-{i}"}  for i in dataset.bug_id.tolist()]
 
         self.id2comment = {f"{dataset_name}-{bug_id}": comment for bug_id, comment in 
                            zip(dataset['bug_id'].to_list(), comments)}
+        self.id2label = {f"{dataset_name}-{bug_id}": label for bug_id, label in
+                           zip(dataset['bug_id'].to_list(), labels)}
 
         print(f"Uploading {len(vectors)} embeddings to Qdrant.")
 
@@ -101,11 +105,12 @@ class RAG:
 
     def query(self,comment, bug_id):
         similar_ids=self.find_similar_bugids(comment,bug_id)
-        comments=[]
+        bug_infos=[]
         for similar_id in similar_ids:
             # comments.append(self.bugid_to_comment(similar_id['bug_id']))
-            comments.append(self.id2comment[similar_id['bug_id']])
-        return comments
+            bug_info=(self.id2comment[similar_id['bug_id']],self.id2label[similar_id['bug_id']])
+            bug_infos.append(bug_info)
+        return bug_infos
 
     def bugid_to_comment(self,bug_id):
         dataset,query_id=bug_id.split('-')
@@ -156,29 +161,27 @@ class RAG:
         similar_bugs = [hit.payload for hit in hits]
         return similar_bugs
 
-def add_symbol(comment, label=None):
-    label_mapping={'1':'caused by a third-party issue','0': 'not caused by a third-party issue'}
-    if label is None:
-        return f"```\n{comment}\n```"
-    else:
+    def add_symbol(self,comment, label=None):
+        label_mapping={'1':'caused by a third-party issue','0': 'not caused by a third-party issue'}
+        assert label is not None
         return f"The description of this bug is:\n```\n{comment}\n``` and it is {label_mapping.get(label)}.\n"
 
-def prompt_construction(comment, bug_id, rag):
-    '''
-        the target output follow's a llama-factory format:
-        instruction: say something
-        input: say something other
-        output: the targeted output
-    ''' 
-    closest_comments=rag.query(comment, bug_id)
-    closest_symbols = [add_symbol(comment) for comment in closest_comments]
-    
-    instruction_prompt = 'Please determine whether following bug is caused by a third-party issue'
-    input_prompt = f'The description of this bug is {comment}.\n'
-    output_prompt = f'Its similar bugs are {closest_symbols}'
-    
-    chat = {'instruction': instruction_prompt, 'input': input_prompt, 'output': output_prompt}
-    return chat
+    def prompt_construction(self,comment, bug_id):
+        '''
+            the target output follow's a llama-factory format:
+            instruction: say something
+            input: say something other
+            output: the targeted output
+        '''
+        closest_buginfos=self.query(comment, bug_id)
+        closest_symbols = [self.add_symbol(comment,label) for comment,label in closest_buginfos]
+
+        instruction_prompt = 'Please determine whether the following bug is caused by a third-party issue'
+        input_prompt = f'The description of this bug is {comment}.\n'
+        output_prompt = f'Its similar bugs are {closest_symbols}'
+
+        chat = {'instruction': instruction_prompt, 'input': input_prompt, 'output': output_prompt}
+        return chat
 
 if __name__=='__main__':
 
