@@ -1,0 +1,4 @@
+{
+    "llama_model_path": "meta-llama/Llama-2-7b-chat-hf",
+    "openai_api_key_path": "api.key"
+}

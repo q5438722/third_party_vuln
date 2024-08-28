@@ -149,8 +149,11 @@ class RAG:
         similar_bugs = [hit.payload for hit in hits]
         return similar_bugs
 
-def add_symbol(comment):
-    return f"```\n{comment}\n```"
+def add_symbol(comment, label=None):
+    if label is None:
+        return f"```\n{comment}\n```"
+    else:
+        return f"The description of this bug is:\n```\n{comment}\n``` and its label is {label}.\n"
 
 def prompt_construction(comment, bug_id, rag):
     '''
@@ -163,7 +166,7 @@ def prompt_construction(comment, bug_id, rag):
     closest_symbols = [add_symbol(comment) for comment in closest_comments]
     
     instruction_prompt = 'Please help identify the following bug is caused by a third-party library.'
-    input_prompt = f'The bug to identify is {comment}.\n'
+    input_prompt = f'The description of this bug is {comment}.\n'
     output_prompt = f'Its similar bugs are {closest_symbols}'
     
     chat = {'instruction': instruction_prompt, 'input': input_prompt, 'output': output_prompt}

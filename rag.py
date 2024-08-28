@@ -64,7 +64,7 @@ class RAG:
         )
         print("All embeddings have been processed and saved to Qdrant.")
 
-    def initialize_with_embedding(self, csv_file, embedding_list):
+    def initialize_with_embedding(self, csv_file, vectors, partition=1.0):
 
 
         # Initialize Qdrant client
@@ -82,16 +82,20 @@ class RAG:
         dataset = pd.read_csv(csv_file)
         dataset_name=csv_file.split('.')[0]
 
-
         comments = dataset['comment'].tolist()
         payloads = [{"bug_id": f"{dataset_name}-{i}"}  for i in dataset.bug_id.tolist()]
+
+        self.id2comment = {f"{dataset_name}-{bug_id}": comment for bug_id, comment in 
+                           zip(dataset['bug_id'].to_list(), comments)}
+
         print(f"Uploading {len(vectors)} embeddings to Qdrant.")
 
+        partition_length = int(len(vectors) * partition)
         # Upload all embeddings in a batch
         self.client.upload_collection(
             collection_name=self.collection_name,
-            vectors=vectors,
-            payload=payloads
+            vectors=vectors[:partition_length],
+            payload=payloads[:partition_length]
         )
         print("All embeddings have been processed and saved to Qdrant.")
 
@@ -99,7 +103,8 @@ class RAG:
         similar_ids=self.find_similar_bugids(comment,bug_id)
         comments=[]
         for similar_id in similar_ids:
-            comments.append(self.bugid_to_comment(similar_id['bug_id']))
+            # comments.append(self.bugid_to_comment(similar_id['bug_id']))
+            comments.append(self.id2comment[similar_id['bug_id']])
         return comments
 
     def bugid_to_comment(self,bug_id):
@@ -111,34 +116,36 @@ class RAG:
         if isinstance(comment, str):
             return comment
 
-    def find_similar_bugids(self, comment, bug_id,k=3):
+    def find_similar_bugids(self, comment, bug_id, k=3):
         """
         1. we search if the embedding of this bug_id is already in the database to avoid recalculation
         2. use the embedding to search for k most similar ones
         :return: k most similar comment as the queried comment
         """
         # Search in Qdrant database for existing embedding with the given bug_id
-        points, next_offset = self.client.scroll(
-            collection_name=self.collection_name,
-            scroll_filter=models.Filter(
-                must=[
-                    models.FieldCondition(
-                        key="bug_id",
-                        match=models.MatchValue(value=bug_id)
-                    )
-                ]
-            ),
-            with_vectors=True,  # Ensure that payload data is included in the response
-            limit=1  # Limit the number of results
-        )
+        # points, next_offset = self.client.scroll(
+        #     collection_name=self.collection_name,
+        #     scroll_filter=models.Filter(
+        #         must=[
+        #             models.FieldCondition(
+        #                 key="bug_id",
+        #                 match=models.MatchValue(value=bug_id)
+        #             )
+        #         ]
+        #     ),
+        #     with_vectors=True,  # Ensure that payload data is included in the response
+        #     limit=1  # Limit the number of results
+        # )
 
-        if points:
+        # if points:
 
-            print(f"Embedding for bug_id {bug_id} found in database.")
-            embedding= np.array(points[0].vector)
-        else:
-            embedding = self.embedding_model.get_embeddings([comment])
-            embedding=embedding[0]
+        #     print(f"Embedding for bug_id {bug_id} found in database.")
+        #     embedding= np.array(points[0].vector)
+        # else:
+        #     embedding = self.embedding_model.get_embeddings([comment])
+        #     embedding=embedding[0]
+        embedding = self.embedding_model.get_embeddings([comment])
+        embedding=embedding[0]
 
 
         hits = self.client.search(
@@ -149,8 +156,11 @@ class RAG:
         similar_bugs = [hit.payload for hit in hits]
         return similar_bugs
 
-def add_symbol(comment):
-    return f"```\n{comment}\n```"
+def add_symbol(comment, label=None):
+    if label is None:
+        return f"```\n{comment}\n```"
+    else:
+        return f"The description of this bug is:\n```\n{comment}\n``` and its label is {label}.\n"
 
 def prompt_construction(comment, bug_id, rag):
     '''
@@ -163,7 +173,7 @@ def prompt_construction(comment, bug_id, rag):
     closest_symbols = [add_symbol(comment) for comment in closest_comments]
     
     instruction_prompt = 'Please help identify the following bug is caused by a third-party library.'
-    input_prompt = f'The bug to identify is {comment}.\n'
+    input_prompt = f'The description of this bug is {comment}.\n'
     output_prompt = f'Its similar bugs are {closest_symbols}'
     
     chat = {'instruction': instruction_prompt, 'input': input_prompt, 'output': output_prompt}
