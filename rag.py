@@ -157,10 +157,11 @@ class RAG:
         return similar_bugs
 
 def add_symbol(comment, label=None):
+    label_mapping={'1':'caused by a third-party issue','0': 'not caused by a third-party issue'}
     if label is None:
         return f"```\n{comment}\n```"
     else:
-        return f"The description of this bug is:\n```\n{comment}\n``` and its label is {label}.\n"
+        return f"The description of this bug is:\n```\n{comment}\n``` and it is {label_mapping.get(label)}.\n"
 
 def prompt_construction(comment, bug_id, rag):
     '''
@@ -172,7 +173,7 @@ def prompt_construction(comment, bug_id, rag):
     closest_comments=rag.query(comment, bug_id)
     closest_symbols = [add_symbol(comment) for comment in closest_comments]
     
-    instruction_prompt = 'Please help identify the following bug is caused by a third-party library.'
+    instruction_prompt = 'Please determine whether following bug is caused by a third-party issue'
     input_prompt = f'The description of this bug is {comment}.\n'
     output_prompt = f'Its similar bugs are {closest_symbols}'
     
@@ -186,10 +187,10 @@ if __name__=='__main__':
 
 
     # Create Emebedding
-    # csv_files = ['dataset/KDE_featured.csv','dataset/firefox_featured.csv','dataset/thunderbird_featured.csv']
-    # for csv_file in csv_files:
-    #     # rag = RAG(embedding_model='LLAMA')
-    #     rag.initialize(csv_file)
+    csv_files = ['dataset/KDE_featured.csv','dataset/firefox_featured.csv','dataset/thunderbird_featured.csv']
+    for csv_file in csv_files:
+        # rag = RAG(embedding_model='LLAMA')
+        rag.initialize(csv_file)
 
     #Query similar embedding
 
