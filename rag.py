@@ -92,25 +92,32 @@ class RAG:
         self.id2label = {f"{dataset_name}-{bug_id}": label for bug_id, label in
                            zip(dataset['bug_id'].to_list(), labels)}
 
-        print(f"Uploading {len(vectors)} embeddings to Qdrant.")
 
-        partition_length = int(len(vectors) * partition)
+        unique_indxes = dataset.drop_duplicates(subset=['comment']).index.to_list()
+        unique_vectors = [vec for idx, vec in enumerate(vectors) if idx in unique_indxes]
+        unique_payloads = [pay for idx, pay in enumerate(payloads) if idx in unique_indxes]
+
+        partition_length = int(len(unique_vectors) * partition)
+        print(f"Uploading {partition_length} embeddings to Qdrant.")
+
         # Upload all embeddings in a batch
         self.client.upload_collection(
             collection_name=self.collection_name,
-            vectors=vectors[:partition_length],
-            payload=payloads[:partition_length]
+            vectors=unique_vectors[:partition_length],
+            payload=unique_payloads[:partition_length]
         )
         print("All embeddings have been processed and saved to Qdrant.")
 
-    def query(self,comment, bug_id):
-        similar_ids=self.find_similar_bugids(comment,bug_id)
+    def query(self,comment, bug_id, k=3):
+        similar_ids=self.find_similar_bugids(comment,bug_id, k)
         bug_infos=[]
         for similar_id in similar_ids:
             # comments.append(self.bugid_to_comment(similar_id['bug_id']))
             bug_info=(self.id2comment[similar_id['bug_id']],self.id2label[similar_id['bug_id']])
+            if bug_info[0] == comment:
+                continue
             bug_infos.append(bug_info)
-        return bug_infos
+        return bug_infos[:k]
 
     def bugid_to_comment(self,bug_id):
         dataset,query_id=bug_id.split('-')
@@ -156,15 +163,16 @@ class RAG:
         hits = self.client.search(
             collection_name=self.collection_name,
             query_vector=embedding,
-            limit=k  # Adjust the limit as needed
+            limit=k*2  # Adjust the limit as needed
         )
         similar_bugs = [hit.payload for hit in hits]
         return similar_bugs
 
     def add_symbol(self,comment, label=None):
-        label_mapping={'1':'caused by a third-party issue','0': 'not caused by a third-party issue'}
+        label_mapping={'1':'caused by a third-party issue','0': 'not caused by a third-party issue',
+                       1:'caused by a third-party issue', 0: 'not caused by a third-party issue'}
         assert label is not None
-        return f"The description of this bug is:\n```\n{comment}\n``` and it is {label_mapping.get(label)}.\n"
+        return f"The description of this bug is:\n```\n{comment}\n``` and it is {label_mapping[label]}.\n"
 
     def prompt_construction(self,comment, bug_id):
         '''
@@ -178,9 +186,14 @@ class RAG:
 
         instruction_prompt = 'Please determine whether the following bug is caused by a third-party issue'
         input_prompt = f'The description of this bug is {comment}.\n'
-        output_prompt = f'Its similar bugs are {closest_symbols}'
+        rag_prompt = f'Its similar bugs are {closest_symbols}.\n'
+        
+        label_mapping={'1':'caused by a third-party issue','0': 'not caused by a third-party issue',
+                       1:'caused by a third-party issue', 0: 'not caused by a third-party issue'}
+        label = self.id2label[bug_id]
+        output_prompt = f'it is {label_mapping.get(label)}.\n'
 
-        chat = {'instruction': instruction_prompt, 'input': input_prompt, 'output': output_prompt}
+        chat = {'instruction': instruction_prompt, 'input': input_prompt + rag_prompt, 'output': output_prompt}
         return chat
 
 if __name__=='__main__':
