@@ -1,0 +1,22 @@
+### model
+model_name_or_path: /home/sigma/tianyu/LLaMA-Factory-tianyu/saves/deepseek-coder-6.7b-instruct/kde/checkpoint-130
+
+### method
+stage: sft
+do_predict: true
+finetuning_type: full
+
+### dataset
+dataset: kde_test
+template: llama3
+cutoff_len: 4096
+overwrite_cache: true
+preprocessing_num_workers: 16
+
+### output
+output_dir: /home/sigma/tianyu/LLaMA-Factory-tianyu/eval/kde_predict
+overwrite_output_dir: true
+
+### eval
+per_device_eval_batch_size: 4
+predict_with_generate: true
